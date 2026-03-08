@@ -1,0 +1,5 @@
+{
+  "name": "Tableau Layout Visualizer",
+  "description": "A tool to visualize Tableau dashboard layouts from .twb files.",
+  "requestFramePermissions": []
+}
