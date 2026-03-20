@@ -1,21 +1,27 @@
 import React, { useState } from 'react';
-import { Upload, Download, Image as ImageIcon, Layout, FileJson, ArrowRight } from 'lucide-react';
+import { Upload, Download, Image as ImageIcon, Layout, FileJson, ArrowRight, ImageDown, Database, ListTree } from 'lucide-react';
 import { parseDashboardLayout, DashboardLayout } from './utils/tableauDashboardParser';
+import { parseTableauMetadata, TableauMetadata } from './utils/tableauMetadataParser';
 import { generateExcalidrawJson } from './utils/excalidrawGenerator';
 import { DashboardTree } from './components/DashboardTree';
 import { SvgVisualizer } from './components/SvgVisualizer';
+import { MetadataViewer } from './components/MetadataViewer';
 
 export default function App() {
   const [dashboards, setDashboards] = useState<DashboardLayout[]>([]);
+  const [metadata, setMetadata] = useState<TableauMetadata | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'layout' | 'data'>('layout');
 
   const processFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
       setDashboards(parseDashboardLayout(content));
+      setMetadata(parseTableauMetadata(content));
       setSelectedZoneId(null);
+      setActiveTab('layout');
     };
     reader.readAsText(file);
   };
@@ -45,6 +51,34 @@ export default function App() {
     a.download = `${dashboard.name}_excalidraw.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadImage = (dashboard: DashboardLayout) => {
+    const svgElement = document.getElementById(`svg-dashboard-${dashboard.name.replace(/\s+/g, '-')}`);
+    if (!svgElement) return;
+    
+    const svgData = new XMLSerializer().serializeToString(svgElement);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const img = new Image();
+    
+    // Set canvas size to match SVG viewBox
+    canvas.width = dashboard.size.width;
+    canvas.height = dashboard.size.height;
+    
+    img.onload = () => {
+      if (ctx) {
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        const pngFile = canvas.toDataURL("image/png");
+        const downloadLink = document.createElement("a");
+        downloadLink.download = `${dashboard.name}_layout.png`;
+        downloadLink.href = pngFile;
+        downloadLink.click();
+      }
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
   };
 
   return (
@@ -121,10 +155,35 @@ export default function App() {
       {dashboards.length > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold text-zinc-900">Analysis Results</h2>
+            <div className="flex items-center gap-6">
+              <h2 className="text-2xl font-bold text-zinc-900">Analysis Results</h2>
+              <div className="flex bg-zinc-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setActiveTab('layout')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'layout' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Layout className="w-4 h-4" /> Layout
+                  </div>
+                </button>
+                <button
+                  onClick={() => setActiveTab('data')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'data' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4" /> Data & Fields
+                  </div>
+                </button>
+              </div>
+            </div>
             <button 
               onClick={() => {
                 setDashboards([]);
+                setMetadata(null);
                 setSelectedZoneId(null);
               }}
               className="text-sm text-zinc-500 hover:text-zinc-900 underline"
@@ -133,68 +192,83 @@ export default function App() {
             </button>
           </div>
 
-          <div className="space-y-12">
-            {dashboards.map((db, idx) => (
-              <div key={idx} className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50">
-                  <div>
-                    <h3 className="text-xl font-bold text-zinc-900">{db.name}</h3>
-                    <p className="text-sm text-zinc-500 mt-1">
-                      Canvas Size: {db.size.width} × {db.size.height}px ({db.size.mode})
-                    </p>
-                  </div>
-                  <button 
-                    onClick={() => downloadExcalidraw(db)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 text-white font-medium rounded-lg hover:bg-zinc-800 transition-colors shadow-sm whitespace-nowrap"
-                  >
-                    <Download className="w-4 h-4" /> 
-                    Export to Excalidraw
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-zinc-100">
-                  {/* Left Column: Tree */}
-                  <div className="p-6 lg:col-span-1 bg-white">
-                    <h4 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <Layout className="w-4 h-4 text-zinc-400" />
-                      Container Hierarchy
-                    </h4>
-                    <div className="overflow-auto max-h-[600px] pr-2 custom-scrollbar">
-                      {db.zones.length > 0 ? (
-                        db.zones.map(zone => (
-                          <DashboardTree 
-                            key={zone.id} 
-                            zone={zone} 
-                            selectedZoneId={selectedZoneId}
-                            onSelectZone={setSelectedZoneId}
-                          />
-                        ))
-                      ) : (
-                        <p className="text-sm text-zinc-500 italic">No zones found in this dashboard.</p>
-                      )}
+          {activeTab === 'layout' && (
+            <div className="space-y-12">
+              {dashboards.map((db, idx) => (
+                <div key={idx} className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50">
+                    <div>
+                      <h3 className="text-xl font-bold text-zinc-900">{db.name}</h3>
+                      <p className="text-sm text-zinc-500 mt-1">
+                        Canvas Size: {db.size.width} × {db.size.height}px ({db.size.mode})
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => downloadImage(db)}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white border border-zinc-300 text-zinc-700 font-medium rounded-lg hover:bg-zinc-50 transition-colors shadow-sm whitespace-nowrap"
+                      >
+                        <ImageDown className="w-4 h-4" /> 
+                        Download Image
+                      </button>
+                      <button 
+                        onClick={() => downloadExcalidraw(db)}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 text-white font-medium rounded-lg hover:bg-zinc-800 transition-colors shadow-sm whitespace-nowrap"
+                      >
+                        <Download className="w-4 h-4" /> 
+                        Export to Excalidraw
+                      </button>
                     </div>
                   </div>
                   
-                  {/* Right Column: Visualizer */}
-                  <div className="p-6 lg:col-span-2 bg-zinc-50/30">
-                    <h4 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <ImageIcon className="w-4 h-4 text-zinc-400" />
-                      1:1 Visual Prototype
-                    </h4>
-                    <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-sm">
-                      {db.zones.length > 0 ? (
-                        <SvgVisualizer dashboard={db} selectedZoneId={selectedZoneId} />
-                      ) : (
-                        <div className="h-64 flex items-center justify-center text-zinc-400">
-                          No layout data to visualize
-                        </div>
-                      )}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-zinc-100">
+                    {/* Left Column: Tree */}
+                    <div className="p-6 lg:col-span-1 bg-white">
+                      <h4 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <Layout className="w-4 h-4 text-zinc-400" />
+                        Container Hierarchy
+                      </h4>
+                      <div className="overflow-auto max-h-[600px] pr-2 custom-scrollbar">
+                        {db.zones.length > 0 ? (
+                          db.zones.map(zone => (
+                            <DashboardTree 
+                              key={zone.id} 
+                              zone={zone} 
+                              selectedZoneId={selectedZoneId}
+                              onSelectZone={setSelectedZoneId}
+                            />
+                          ))
+                        ) : (
+                          <p className="text-sm text-zinc-500 italic">No zones found in this dashboard.</p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Right Column: Visualizer */}
+                    <div className="p-6 lg:col-span-2 bg-zinc-50/30">
+                      <h4 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-zinc-400" />
+                        1:1 Visual Prototype
+                      </h4>
+                      <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-sm">
+                        {db.zones.length > 0 ? (
+                          <SvgVisualizer dashboard={db} selectedZoneId={selectedZoneId} />
+                        ) : (
+                          <div className="h-64 flex items-center justify-center text-zinc-400">
+                            No layout data to visualize
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'data' && metadata && (
+            <MetadataViewer metadata={metadata} />
+          )}
         </div>
       )}
     </div>

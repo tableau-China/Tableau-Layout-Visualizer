@@ -73,6 +73,7 @@ export const SvgVisualizer: React.FC<SvgVisualizerProps> = ({ dashboard, selecte
   return (
     <div className="w-full overflow-auto bg-zinc-100 p-4 rounded-lg border border-zinc-200 flex justify-center items-center">
       <svg
+        id={`svg-dashboard-${dashboard.name.replace(/\s+/g, '-')}`}
         viewBox={`0 0 ${width} ${height}`}
         style={{ width: '100%', maxWidth: '100%', height: 'auto', maxHeight: '800px', backgroundColor: 'white' }}
         xmlns="http://www.w3.org/2000/svg"
