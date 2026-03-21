@@ -22,8 +22,12 @@ View your app in AI Studio: https://ai.studio/apps/5e5ec502-e7e7-453c-97a3-8a9cf
 3. Run the app:
    `npm run dev`
 
+
+--- 
 BY XILEJUN (yupeng wu)
+
 Tableau Visionary * 6
+
 Author of four books (Tableau)
 
 <img width="1080" height="781" alt="image" src="https://github.com/user-attachments/assets/118ea5d5-7815-4e1c-8605-cf15af05b39e" />
