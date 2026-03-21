@@ -1,7 +1,5 @@
 <div align="center">
    <img width="1029" height="600" alt="image" src="https://github.com/user-attachments/assets/23a205fa-8627-499c-8c3d-8b778bdd95c9" />
-
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
 
@@ -27,3 +25,5 @@ View your app in AI Studio: https://ai.studio/apps/5e5ec502-e7e7-453c-97a3-8a9cf
 BY XILEJUN (yupeng wu)
 Tableau Visionary * 6
 Author of four books (Tableau)
+
+<img width="1080" height="781" alt="image" src="https://github.com/user-attachments/assets/118ea5d5-7815-4e1c-8605-cf15af05b39e" />
