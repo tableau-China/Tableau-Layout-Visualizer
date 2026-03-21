@@ -144,42 +144,6 @@ export function MetadataViewer({ metadata }: MetadataViewerProps) {
             {isExpanded && (
               <div className="p-6 bg-zinc-50/50">
                 <div className="space-y-8">
-                  {/* Data Model / Tables */}
-                  {ds.tables && ds.tables.length > 0 && (
-                    <div>
-                      <h5 className="text-base font-bold text-zinc-900 mb-4 flex items-center gap-2">
-                        <Network className="w-5 h-5 text-blue-500" />
-                        Data Model ({ds.tables.length} Tables)
-                      </h5>
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {ds.tables.map(t => (
-                          <div key={t.id} className="bg-white border border-blue-200 shadow-sm text-blue-800 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2">
-                            <Table2 className="w-4 h-4 text-blue-500" />
-                            {t.name}
-                          </div>
-                        ))}
-                      </div>
-                      {ds.relations && ds.relations.length > 0 && (
-                        <div className="bg-white border border-zinc-200 rounded-lg p-4 shadow-sm">
-                          <h6 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Relationships</h6>
-                          <div className="space-y-2">
-                            {ds.relations.map((rel, idx) => {
-                              const leftName = ds.tables.find(t => t.id === rel.leftTable)?.name || rel.leftTable;
-                              const rightName = ds.tables.find(t => t.id === rel.rightTable)?.name || rel.rightTable;
-                              return (
-                                <div key={idx} className="flex items-center gap-2 text-sm text-zinc-700">
-                                  <span className="font-medium bg-zinc-100 px-2 py-1 rounded">{leftName}</span>
-                                  <ArrowRightLeft className="w-4 h-4 text-zinc-400" />
-                                  <span className="font-medium bg-zinc-100 px-2 py-1 rounded">{rightName}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   {/* Natural Fields */}
                   <div>
                     <h5 className="text-base font-bold text-zinc-900 mb-4 flex items-center gap-2">

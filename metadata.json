@@ -1,5 +1,5 @@
 {
-  "name": "Tableau Layout Visualizer",
-  "description": "A tool to visualize Tableau dashboard layouts from .twb files.",
+  "name": "Tableau Layout Converter & Design Inspector",
+  "description": "A tool to visualize Tableau dashboard layouts, data models, relationships, and calculated fields from .twb files.",
   "requestFramePermissions": []
 }

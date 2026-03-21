@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { Upload, Download, Image as ImageIcon, Layout, FileJson, ArrowRight, ImageDown, Database, ListTree } from 'lucide-react';
+import { Upload, Download, Image as ImageIcon, Layout, FileJson, ArrowRight, ImageDown, Database, ListTree, Network } from 'lucide-react';
 import { parseDashboardLayout, DashboardLayout } from './utils/tableauDashboardParser';
 import { parseTableauMetadata, TableauMetadata } from './utils/tableauMetadataParser';
 import { generateExcalidrawJson } from './utils/excalidrawGenerator';
 import { DashboardTree } from './components/DashboardTree';
 import { SvgVisualizer } from './components/SvgVisualizer';
 import { MetadataViewer } from './components/MetadataViewer';
+import { DataModelViewer } from './components/DataModelViewer';
 
 export default function App() {
   const [dashboards, setDashboards] = useState<DashboardLayout[]>([]);
   const [metadata, setMetadata] = useState<TableauMetadata | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'layout' | 'data'>('layout');
+  const [activeTab, setActiveTab] = useState<'layout' | 'model' | 'data'>('layout');
 
   const processFile = (file: File) => {
     const reader = new FileReader();
@@ -88,11 +89,11 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
           <div className="text-center max-w-3xl mx-auto">
             <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-zinc-900 mb-6">
-              Tableau to Excalidraw <br className="hidden lg:block" />
-              <span className="text-blue-600">Layout Converter</span>
+              Tableau Layout Converter <br className="hidden lg:block" />
+              <span className="text-blue-600">& Design Inspector</span>
             </h1>
             <p className="text-lg text-zinc-600 mb-10">
-              Automatically extract dashboard layouts from your Tableau (.twb) files and convert them into editable Excalidraw prototypes in seconds. No manual drawing required.
+              Automatically extract dashboard layouts and inspect data models, relationships, and calculated fields from your Tableau (.twb) files.
             </p>
             
             {/* Upload Area */}
@@ -166,6 +167,16 @@ export default function App() {
                 >
                   <div className="flex items-center gap-2">
                     <Layout className="w-4 h-4" /> Layout
+                  </div>
+                </button>
+                <button
+                  onClick={() => setActiveTab('model')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'model' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Network className="w-4 h-4" /> Data Model
                   </div>
                 </button>
                 <button
@@ -264,6 +275,10 @@ export default function App() {
                 </div>
               ))}
             </div>
+          )}
+
+          {activeTab === 'model' && metadata && (
+            <DataModelViewer metadata={metadata} />
           )}
 
           {activeTab === 'data' && metadata && (

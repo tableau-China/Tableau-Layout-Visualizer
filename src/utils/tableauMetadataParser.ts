@@ -24,11 +24,16 @@ export interface TableauParameter {
 export interface TableauTable {
   id: string;
   name: string;
+  customSql?: string;
 }
 
 export interface TableauRelation {
   leftTable: string;
   rightTable: string;
+  joinType?: string;
+  expression?: string;
+  leftType?: string; // e.g., 'many', 'one'
+  rightType?: string; // e.g., 'many', 'one'
 }
 
 export interface TableauDatasource {
@@ -36,6 +41,7 @@ export interface TableauDatasource {
   name: string;
   type: string;
   updateTime?: string;
+  connectionInfo?: Record<string, string>;
   tables: TableauTable[];
   relations: TableauRelation[];
   fields: TableauField[];
@@ -67,6 +73,15 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
       const colName = colEl.getAttribute('caption') || colId.replace(/^\[|\]$/g, '');
       if (colId) {
         globalFieldMap.set(colId, colName);
+      }
+    });
+
+    const metadataRecords = dsEl.querySelectorAll('metadata-record[class="column"]');
+    metadataRecords.forEach(mr => {
+      const localName = mr.querySelector('local-name')?.textContent || '';
+      const remoteName = mr.querySelector('remote-name')?.textContent || localName.replace(/^\[|\]$/g, '');
+      if (localName && !globalFieldMap.has(localName)) {
+        globalFieldMap.set(localName, remoteName);
       }
     });
     
@@ -125,15 +140,18 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
   // Parse worksheets to find used fields
   const worksheetEls = xmlDoc.querySelectorAll('workbook > worksheets > worksheet');
   const usedFieldsByDatasource: Record<string, Record<string, string[]>> = {}; // dsName -> fieldName -> worksheetNames
+  const fieldDefsFromViews: Record<string, Record<string, any>> = {}; // dsName -> fieldName -> def
   
   worksheetEls.forEach(wsEl => {
     const wsName = wsEl.getAttribute('name') || 'Unknown Worksheet';
-    const dsDependencies = wsEl.querySelectorAll('table > view > datasource-dependencies');
+    // Broaden selector to catch all datasource-dependencies, not just under table > view
+    const dsDependencies = wsEl.querySelectorAll('datasource-dependencies');
     
     dsDependencies.forEach(dsDep => {
       const dsName = dsDep.getAttribute('datasource') || '';
       if (!usedFieldsByDatasource[dsName]) {
         usedFieldsByDatasource[dsName] = {};
+        fieldDefsFromViews[dsName] = {};
       }
       
       const colInstances = dsDep.querySelectorAll('column-instance');
@@ -159,6 +177,17 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
           if (!usedFieldsByDatasource[dsName][colName].includes(wsName)) {
             usedFieldsByDatasource[dsName][colName].push(wsName);
           }
+          
+          // Save field definition if we don't have it, as some fields ONLY appear in view dependencies
+          if (!fieldDefsFromViews[dsName][colName]) {
+            fieldDefsFromViews[dsName][colName] = {
+              caption: col.getAttribute('caption') || colName.replace(/^\[|\]$/g, ''),
+              datatype: col.getAttribute('datatype') || 'unknown',
+              role: col.getAttribute('role') || 'dimension',
+              type: col.getAttribute('type') || 'nominal',
+              formula: col.querySelector('calculation')?.getAttribute('formula') || undefined
+            };
+          }
         }
       });
     });
@@ -172,14 +201,27 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
     if (name === 'Parameters' || id === 'Parameters') return;
     
     let type = 'Unknown';
+    let connectionInfo: Record<string, string> | undefined = undefined;
     const connectionEl = dsEl.querySelector('connection');
     if (connectionEl) {
       type = connectionEl.getAttribute('class') || 'Unknown';
+      let targetConnection = connectionEl;
       if (type === 'federated') {
         const namedConnection = connectionEl.querySelector('named-connections > named-connection > connection');
         if (namedConnection) {
           type = namedConnection.getAttribute('class') || type;
+          targetConnection = namedConnection;
         }
+      }
+      
+      connectionInfo = {};
+      const attrs = ['server', 'dbname', 'filename', 'directory', 'port', 'username'];
+      attrs.forEach(attr => {
+        const val = targetConnection.getAttribute(attr);
+        if (val) connectionInfo![attr] = val;
+      });
+      if (Object.keys(connectionInfo).length === 0) {
+        connectionInfo = undefined;
       }
     }
     
@@ -200,17 +242,37 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
     objectEls.forEach(obj => {
       const id = obj.getAttribute('id') || '';
       const caption = obj.getAttribute('caption') || id;
+      let customSql = undefined;
+      const textRelation = obj.querySelector('relation[type="text"]');
+      if (textRelation) {
+        customSql = textRelation.textContent?.trim() || undefined;
+      }
       if (id) {
-        tables.push({ id, name: caption.replace(/^\[|\]$/g, '') });
+        tables.push({ id, name: caption.replace(/^\[|\]$/g, ''), customSql });
       }
     });
 
     const relEls = dsEl.querySelectorAll('object-graph > relationships > relationship');
     relEls.forEach(rel => {
-      const left = rel.querySelector('first-end-point')?.getAttribute('object-id') || '';
-      const right = rel.querySelector('second-end-point')?.getAttribute('object-id') || '';
+      const firstEnd = rel.querySelector('first-end-point');
+      const secondEnd = rel.querySelector('second-end-point');
+      const left = firstEnd?.getAttribute('object-id') || '';
+      const right = secondEnd?.getAttribute('object-id') || '';
+      const leftType = firstEnd?.getAttribute('type') || undefined;
+      const rightType = secondEnd?.getAttribute('type') || undefined;
+      const expressionEl = rel.querySelector('expression');
+      let expression = undefined;
+      if (expressionEl) {
+        const op = expressionEl.getAttribute('op');
+        const children = expressionEl.querySelectorAll(':scope > expression');
+        if (children.length === 2) {
+           expression = `${children[0].getAttribute('op')} ${op} ${children[1].getAttribute('op')}`;
+        } else {
+           expression = op || undefined;
+        }
+      }
       if (left && right) {
-        relations.push({ leftTable: left, rightTable: right });
+        relations.push({ leftTable: left, rightTable: right, expression, leftType, rightType });
       }
     });
 
@@ -222,6 +284,40 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
         const caption = t.getAttribute('caption') || name;
         if (name && !tables.find(tbl => tbl.id === name)) {
           tables.push({ id: name, name: caption.replace(/^\[|\]$/g, '') });
+        }
+      });
+      
+      const textEls = dsEl.querySelectorAll('relation[type="text"]');
+      textEls.forEach(t => {
+        const name = t.getAttribute('name') || '';
+        const caption = t.getAttribute('caption') || name;
+        const customSql = t.textContent?.trim() || undefined;
+        if (name && !tables.find(tbl => tbl.id === name)) {
+          tables.push({ id: name, name: caption.replace(/^\[|\]$/g, ''), customSql });
+        }
+      });
+
+      const joinEls = dsEl.querySelectorAll('relation[type="join"]');
+      joinEls.forEach(j => {
+        const joinType = j.getAttribute('join') || 'inner';
+        const children = j.querySelectorAll(':scope > relation');
+        if (children.length >= 2) {
+          const left = children[0].getAttribute('name') || '';
+          const right = children[1].getAttribute('name') || '';
+          const clause = j.querySelector('clause[type="join"] > expression');
+          let expression = undefined;
+          if (clause) {
+            const op = clause.getAttribute('op');
+            const exprs = clause.querySelectorAll(':scope > expression');
+            if (exprs.length === 2) {
+              expression = `${exprs[0].getAttribute('op')} ${op} ${exprs[1].getAttribute('op')}`;
+            } else {
+              expression = op || undefined;
+            }
+          }
+          if (left && right) {
+            relations.push({ leftTable: left, rightTable: right, joinType, expression });
+          }
         }
       });
     }
@@ -297,6 +393,82 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
       fieldMap.set(colId, field);
       fieldNameMap.set(`[${colName}]`, field);
     });
+
+    // Add natural fields from metadata records that might not have a <column> element
+    metadataRecords.forEach(mr => {
+      const localName = mr.querySelector('local-name')?.textContent || '';
+      if (localName && !fieldMap.has(localName)) {
+        const remoteName = mr.querySelector('remote-name')?.textContent || localName.replace(/^\[|\]$/g, '');
+        const localType = mr.querySelector('local-type')?.textContent || 'unknown';
+        const parentName = mr.querySelector('parent-name')?.textContent || '';
+        
+        const dataType = localType;
+        const role = (dataType === 'real' || dataType === 'integer') ? 'measure' : 'dimension';
+        const colType = (dataType === 'real' || dataType === 'integer') ? 'quantitative' : 'nominal';
+        let tableName = parentName ? parentName.replace(/^\[|\]$/g, '') : undefined;
+        
+        if (!tableName && localName.includes('.')) {
+          const parts = localName.split('.');
+          if (parts.length > 1 && parts[0].startsWith('[')) {
+            tableName = parts[0].replace(/^\[|\]$/g, '');
+          }
+        }
+
+        const usedInViews = usedFieldsByDatasource[id]?.[localName] ? [...usedFieldsByDatasource[id][localName]] : [];
+
+        const field: TableauField = {
+          id: localName,
+          name: remoteName,
+          dataType,
+          role,
+          type: colType,
+          isCalculated: false,
+          formula: undefined,
+          dependencies: [],
+          usedInViews,
+          tableName
+        };
+        
+        fields.push(field);
+        fieldMap.set(localName, field);
+        fieldNameMap.set(`[${remoteName}]`, field);
+      }
+    });
+
+    // Add fields from worksheet dependencies that might not be in the main datasource definition
+    if (fieldDefsFromViews[id]) {
+      Object.entries(fieldDefsFromViews[id]).forEach(([colId, def]) => {
+        if (!fieldMap.has(colId)) {
+          const usedInViews = usedFieldsByDatasource[id]?.[colId] ? [...usedFieldsByDatasource[id][colId]] : [];
+          
+          let tableName = undefined;
+          if (colId.includes('.')) {
+            const parts = colId.split('.');
+            if (parts.length > 1 && parts[0].startsWith('[')) {
+              tableName = parts[0].replace(/^\[|\]$/g, '');
+            }
+          }
+
+          const field: TableauField = {
+            id: colId,
+            name: def.caption,
+            dataType: def.datatype,
+            role: def.role,
+            type: def.type,
+            isCalculated: !!def.formula,
+            formula: def.formula,
+            dependencies: [], // Will be populated in pass 3 if calculated
+            usedInViews,
+            tableName
+          };
+          
+          fields.push(field);
+          fieldMap.set(colId, field);
+          fieldNameMap.set(`[${def.caption}]`, field);
+          globalFieldMap.set(colId, def.caption);
+        }
+      });
+    }
     
     // Second pass: propagate usedInViews to dependencies
     let changed = true;
@@ -334,8 +506,39 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
             resolvedName = globalFieldMap.get(depId)!;
             readableFormula = readableFormula.split(depId).join(`[${resolvedName}]`);
           }
-          if (!newDependencies.includes(`[${resolvedName}]`) && resolvedName !== 'Parameters') {
-            newDependencies.push(`[${resolvedName}]`);
+          
+          const depNameWithBrackets = `[${resolvedName}]`;
+          
+          if (!newDependencies.includes(depNameWithBrackets) && resolvedName !== 'Parameters') {
+            newDependencies.push(depNameWithBrackets);
+            
+            // If this dependency is completely unknown, it's likely a natural field 
+            // from the database that wasn't explicitly serialized. Let's create a stub for it.
+            const isKnownField = fieldMap.has(depId) || fieldNameMap.has(depId) || fieldNameMap.has(depNameWithBrackets);
+            const isParameter = parameters.some(p => p.id === depId || `[${p.name}]` === depNameWithBrackets);
+            
+            if (!isKnownField && !isParameter) {
+              const directUsage = usedFieldsByDatasource[id]?.[depId] || [];
+              const combinedUsage = Array.from(new Set([...field.usedInViews, ...directUsage]));
+
+              const stubField: TableauField = {
+                id: depId,
+                name: resolvedName,
+                dataType: 'unknown',
+                role: 'dimension', // Default fallback
+                type: 'nominal', // Default fallback
+                isCalculated: false,
+                formula: undefined,
+                dependencies: [],
+                usedInViews: combinedUsage,
+                tableName: undefined // Unknown table
+              };
+              
+              fields.push(stubField);
+              fieldMap.set(depId, stubField);
+              fieldNameMap.set(depNameWithBrackets, stubField);
+              globalFieldMap.set(depId, resolvedName);
+            }
           }
         });
         
@@ -349,6 +552,7 @@ export function parseTableauMetadata(xmlString: string): TableauMetadata {
       name,
       type,
       updateTime,
+      connectionInfo,
       tables,
       relations,
       fields
